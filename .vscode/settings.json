@@ -1,0 +1,23 @@
+{
+  "Lua.runtime.version": "Lua 5.3",
+  "Lua.workspace.library": [
+    "/home/mason/Documents/CC/LuaEnvironments//lua-ls-cc-tweaked/library",
+    "${addons}/cc-tweaked/module/library"
+  ],
+  "Lua.diagnostics.disable": [
+    "unused-local",
+    "lowercase-global",
+    "unused-function",
+    "deprecated",
+    "redefined-local",
+    "undefined-field"
+  ],
+  "Lua.runtime.builtin": {
+    "bit32": "enable",
+    "bit": "disable",
+    "utf8": "enable",
+    "io": "disable",
+    "os": "disable"
+  },
+  "Lua.workspace.checkThirdParty": false
+}
