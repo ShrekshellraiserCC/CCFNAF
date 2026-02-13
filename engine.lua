@@ -196,7 +196,7 @@ end
 
 ---Add a timer to this object
 ---@param self Object
----@param func fun(self: Object)
+---@param func fun(self: Object):boolean?
 ---@param interval number milliseconds
 ---@param rep integer|boolean?
 ---@return integer handle
@@ -265,7 +265,10 @@ end
 function objectInterface.tickTimer(self, timerId)
   local timer = self.timers[timerId]
   if timer and (timer.startTime + timer.interval < os.epoch("utc")) and not timer.paused then
-    timer.func(self)
+    if timer.func(self) then
+      self.timers[timerId] = nil
+      return
+    end
     local rep = timer["repeat"]
     if rep then
       return handleTimerRepeat(self, timerId)
@@ -457,7 +460,7 @@ local function loadTableFromFile(filename)
   return assert(textutils.unserialise(filedata), ("File %s is not a table."):format(filename))
 end
 
----@alias BIMG {[1]: BIMGFrame, palette: table<integer,table>}
+---@alias BIMG {[1]: BIMGFrame, palette: table<integer,table|number>}
 
 
 
@@ -554,6 +557,123 @@ local function animation(obj, bimg, mode, stopCallback, fps)
   return obj --[[@as AnimatedObject]]
 end
 
+local function loadBIMGRaw(s)
+  return textutils.unserialise(s)
+end
+
+local unpackCache = {}
+for i = 0, 255 do
+  unpackCache[i] = {
+    colors.toBlit(2 ^ bit32.rshift(i, 4)),
+    colors.toBlit(2 ^ bit32.band(i, 15))
+  }
+end
+local function unpackLine(s, i, w)
+  local us = {}
+  local fi = math.min(#s, i + math.ceil(w / 2) - 1)
+  for j = i, fi do
+    local u = unpackCache[s:byte(j, j)]
+    us[#us + 1] = u[1]
+    us[#us + 1] = u[2]
+  end
+  local fs = table.concat(us, ""):sub(1, w)
+  return fs, fi + 1
+end
+
+local lualzw = require "lualzw"
+
+local t0 = os.epoch("utc")
+local function loadSBIMGRaw(s)
+  local i = 1
+  local w, h, frames, hasPalette, i = string.unpack("HHHB", s, i)
+  local bimg = loadBIMGRaw(lualzw.decompress(s))
+  -- if hasPalette ~= 0 then
+  --   bimg.palette = {}
+  --   for c = 0, 15 do
+  --     local col
+  --     col, i = string.unpack("I3", s, i)
+  --     bimg.palette[c] = { col }
+  --   end
+  -- end
+  -- local fs = s:sub(i)
+  -- i = 1
+  -- for frame = 1, frames do
+  --   bimg[frame] = {}
+  --   for y = 1, h do
+  --     bimg[frame][y] = {}
+  --     local line = bimg[frame][y]
+  --     line[1], i = s:sub(i, i + w - 1), i + w
+  --     line[2], i = unpackLine(fs, i, w)
+  --     line[3], i = unpackLine(fs, i, w)
+  --   end
+  -- end
+  if t0 + 1000 < os.epoch('utc') then
+    t0 = os.epoch 'utc'
+    os.queueEvent("fakeevent")
+    os.pullEvent("fakeevent")
+  end
+  return bimg
+end
+local packCache = {}
+for i = 0, 15 do
+  local n = bit32.lshift(i, 4)
+  local ch1 = colors.toBlit(2 ^ i)
+  for j = 0, 15 do
+    local n2 = bit32.bor(n, j)
+    local ch2 = colors.toBlit(2 ^ j)
+    packCache[ch1 .. ch2] = n2
+  end
+end
+local function packLine(s)
+  local ns = {}
+  for i = 1, #s, 2 do
+    local ch = s:sub(i, i + 1)
+    if #ch == 1 then
+      ch = ch .. "0"
+    end
+    ns[#ns + 1] = string.char(packCache[ch])
+  end
+  return table.concat(ns, "")
+end
+
+local function serializeSBIMG(img)
+  -- local w, h, frames = #img[1][1][1], #img[1], #img
+  -- local header = string.pack("HHHB", w, h, frames, img.palette and 1 or 0)
+  -- local s = {}
+  -- if img.palette then
+  --   for v = 0, 15 do
+  --     local r, g, b = table.unpack(img.palette[v] or { 0 })
+  --     if g and b then
+  --       r = colors.packRGB(r, g, b)
+  --     end
+  --     s[#s + 1] = string.pack("I3", r)
+  --   end
+  -- end
+  -- for frame, data in ipairs(img) do
+  --   for y, line in ipairs(data) do
+  --     s[#s + 1] = line[1]
+  --     s[#s + 1] = packLine(line[2])
+  --     s[#s + 1] = packLine(line[3])
+  --   end
+  -- end
+  -- return header .. (table.concat(s, ""))
+  return lualzw.compress(textutils.serialise(img))
+end
+
+local function saveTexture(filename, img, verbose)
+  local t0 = os.epoch("utc")
+  if verbose then
+    print(("Saving textures.%s..."):format(filename))
+  end
+  local s = serializeSBIMG(img)
+  local f = assert(fs.open(filename, "w"))
+  f.write(s)
+  f.close()
+  if verbose then
+    print(("Saved textures.%s in %.2fsec"):format(filename, (os.epoch("utc") - t0) / 1000))
+  end
+end
+
 ---@param filename string
 ---@param verbose boolean?
 ---@return BIMG
@@ -562,7 +682,14 @@ local function loadTexture(filename, verbose)
   if verbose then
     print(("Loading textures.%s..."):format(filename))
   end
-  local texture = loadTableFromFile(filename) --[[@as BIMG]]
+  local s = loadFile(filename)
+  local texture
+  if filename:sub(-5) == ".bimg" then
+    texture = loadBIMGRaw(s) --[[@as BIMG]]
+  elseif filename:sub(-5) == "sbimg" then
+    texture = loadSBIMGRaw(s) --[[@as BIMG]]
+  end
+  assert(texture, ("Failed to load textures.%s!"):format(filename))
   if verbose then
     print(("Loaded textures.%s in %.2fsec"):format(filename, (os.epoch("utc") - t0) / 1000))
   end
@@ -697,5 +824,6 @@ return {
   staticObject = staticObject,
   animatedObject = animatedObject,
   statedObject = statedObject,
-  loadTexture = loadTexture
+  loadTexture = loadTexture,
+  saveTexture = saveTexture
 }

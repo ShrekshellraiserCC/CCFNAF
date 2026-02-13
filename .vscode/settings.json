@@ -6,7 +6,6 @@
   ],
   "Lua.diagnostics.disable": [
     "unused-local",
-    "lowercase-global",
     "unused-function",
     "deprecated",
     "redefined-local",

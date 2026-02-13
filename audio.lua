@@ -68,7 +68,7 @@ local function audio(speakers)
     self.defaultVolume = 1
 
     --- Initialize sound system
-    ---@alias SpeakerInfo {playAudio: fun(audio: table, volume: integer?): boolean}
+    ---@alias SpeakerInfo ccTweaked.peripherals.Speaker
     ---@alias BusySpeaker {peripheral: SpeakerInfo, queue: table[], priority: integer, volume: number?, rep: (fun(): boolean)|boolean|number?, original: table?}
 
     local speakerList = {}
@@ -143,6 +143,15 @@ local function audio(speakers)
         end
     end
 
+    local function stopSpeaker(name)
+        local info = busySpeakers[name]
+        if info then
+            info.peripheral.stop()
+            availableSpeakers[name] = info.peripheral
+            busySpeakers[name] = nil
+        end
+    end
+
     ---Play some audio, returns speaker it was played on if successful, otherwise returns nothing
     ---@param data table
     ---@param volume number?
@@ -175,10 +184,12 @@ local function audio(speakers)
     ---Cancel the audio playing on a given speaker
     ---@param speakerName string
     function self.cancelAudio(speakerName)
-        local info = busySpeakers[speakerName]
-        if info then
-            availableSpeakers[speakerName] = info.peripheral
-            busySpeakers[speakerName] = nil
+        stopSpeaker(speakerName)
+    end
+
+    function self.stopAllAudio()
+        for k, v in pairs(busySpeakers) do
+            stopSpeaker(k)
         end
     end
 

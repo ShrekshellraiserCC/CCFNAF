@@ -8,3 +8,6 @@
   * View regions
 
 Stage scene naming?
+
+0.216875 scaled images
+21.6875
