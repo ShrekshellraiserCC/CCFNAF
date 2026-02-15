@@ -7,7 +7,7 @@ local function convert(input)
     local fn = fs.getName(input)
     local img = engine.loadTexture(input, true)
 
-    local ofn = fs.combine(outputDir, fn:sub(1, -6)) .. ".sbimg"
+    local ofn = fs.combine(outputDir, fn) .. ".lwz"
     engine.saveTexture(ofn, img, true)
 end
 for i, fn in ipairs(fs.list("converted")) do

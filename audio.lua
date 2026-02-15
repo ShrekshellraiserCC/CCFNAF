@@ -47,7 +47,7 @@ local function loadAudio(filename, verbose, framerate)
     local decoder = dfpwm.make_decoder()
     for i = 1, #rawData, framerate do
         audioData[#audioData + 1] = decoder(rawData:sub(i, i + framerate))
-        if os.epoch("utc") > lastYieldTime + 5000 then
+        if os.epoch("utc") > lastYieldTime + 1000 then
             lastYieldTime = os.epoch("utc")
             doYield()
         end
@@ -123,22 +123,32 @@ local function audio(speakers)
         availableSpeakers[name] = speaker.peripheral
     end
 
-    ---Find a channel to overwrite with the given audio
+    local function setSpeakerBusy(name, speaker, data, volume, priority, rep)
+        availableSpeakers[name] = nil
+        local bs = {
+            peripheral = speaker,
+            queue = shallowClone(data),
+            priority = priority,
+            volume = volume,
+            rep = rep
+        }
+        busySpeakers[name] = bs
+        if rep then
+            busySpeakers[name].original = data
+        end
+        return bs
+    end
+    ---Find a channel to overwrite with the given audio, rep not supported
     ---@param data table
     ---@param volume number?
     ---@param priority integer?
-    ---@return string|nil
+    ---@return BusySpeaker?
     local function overwriteSpeaker(data, volume, priority)
         for speakerName, v in pairs(busySpeakers) do
             if v.priority < priority then
-                -- overwrite this sound
-                for i, sample in ipairs(data) do
-                    v.queue[i] = sample
-                end
-                v.volume = volume or self.defaultVolume
-                v.priority = priority or self.defaultPriority
+                local bs = setSpeakerBusy(speakerName, v.peripheral, data, volume, priority, nil)
                 tickSpeaker(speakerName)
-                return speakerName
+                return bs
             end
         end
     end
@@ -152,39 +162,36 @@ local function audio(speakers)
         end
     end
 
+    ---@param speaker BusySpeaker
+    local function stopBusySpeaker(speaker)
+        local name = peripheral.getName(speaker.peripheral)
+        if busySpeakers[name] == speaker then
+            stopSpeaker(name)
+        end
+    end
     ---Play some audio, returns speaker it was played on if successful, otherwise returns nothing
     ---@param data table
     ---@param volume number?
     ---@param priority integer?
     ---@param rep (fun(): boolean)|boolean|integer?
-    ---@return string|nil speaker
+    ---@return BusySpeaker? handle
     function self.playAudio(data, volume, priority, rep)
         priority = priority or self.defaultPriority
         volume = volume or self.defaultVolume
         local speakerName, speaker = next(availableSpeakers)
         if speaker and speakerName then
-            availableSpeakers[speakerName] = nil
-            busySpeakers[speakerName] = {
-                peripheral = speaker,
-                queue = shallowClone(data),
-                priority = priority,
-                volume = volume,
-                rep = rep
-            }
-            if rep then
-                busySpeakers[speakerName].original = data
-            end
+            local bs = setSpeakerBusy(speakerName, speaker, data, volume, priority, rep)
             tickSpeaker(speakerName)
-            return speakerName
+            return bs
         elseif not rep then
             return overwriteSpeaker(data, volume, priority)
         end
     end
 
     ---Cancel the audio playing on a given speaker
-    ---@param speakerName string
-    function self.cancelAudio(speakerName)
-        stopSpeaker(speakerName)
+    ---@param handle BusySpeaker
+    function self.cancelAudio(handle)
+        stopBusySpeaker(handle)
     end
 
     function self.stopAllAudio()

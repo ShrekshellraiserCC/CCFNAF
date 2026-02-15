@@ -49,6 +49,7 @@ local function dictAddA(str, dict, a, b)
     return dict, a, b
 end
 
+local t0 = os.epoch("utc")
 local function compress(input)
     if type(input) ~= "string" then
         return nil, "string expected, got " .. type(input)
@@ -84,6 +85,11 @@ local function compress(input)
         else
             word = wc
         end
+        if os.epoch("utc") > t0 + 1000 then
+            os.queueEvent("lualzw_yield")
+            os.pullEvent("lualzw_yield")
+            t0 = os.epoch("utc")
+        end
     end
     result[n] = basedictcompress[word] or dict[word]
     resultlen = resultlen + #result[n]
@@ -107,9 +113,7 @@ local function dictAddB(str, dict, a, b)
     return dict, a, b
 end
 
-local t0
 local function decompress(input)
-    t0 = os.epoch('utc')
     if type(input) ~= "string" then
         return nil, "string expected, got " .. type(input)
     end
@@ -160,6 +164,7 @@ local function decompress(input)
         if os.epoch("utc") > t0 + 1000 then
             os.queueEvent("lualzw_yield")
             os.pullEvent("lualzw_yield")
+            t0 = os.epoch("utc")
         end
     end
     return tconcat(result)

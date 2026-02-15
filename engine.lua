@@ -686,7 +686,7 @@ local function loadTexture(filename, verbose)
   local texture
   if filename:sub(-5) == ".bimg" then
     texture = loadBIMGRaw(s) --[[@as BIMG]]
-  elseif filename:sub(-5) == "sbimg" then
+  elseif filename:sub(-9) == ".bimg.lwz" then
     texture = loadSBIMGRaw(s) --[[@as BIMG]]
   end
   assert(texture, ("Failed to load textures.%s!"):format(filename))
@@ -777,25 +777,36 @@ local function context(displayName)
   local running = true
   local retVal
   local renderTimer
+  local lastRendertime
+  local function tick()
+    if not renderTimer then
+      renderTimer = os.startTimer(0.05)
+    end
+    local currentTime = os.epoch("utc")
+    local e = table.pack(os.pullEvent())
+    if e[1] == "timer" and e[2] == renderTimer or currentTime > renderTimer + 0.05 then
+      win.setVisible(false)
+      win.clear()
+      os.cancelTimer(renderTimer)
+      renderTimer = nil
+      self.root:_draw(currentTime - lastRendertime)
+      lastRendertime = currentTime
+      win.setVisible(true)
+      win.redraw()
+    end
+    -- assert(xpcall(self.root.tick, function() print(debug.traceback()) end, self.root, table.unpack(e, 1, e.n)))
+    self.root:tick(table.unpack(e, 1, e.n))
+  end
+
   function self.start()
-    local lastRendertime = os.epoch("utc")
+    lastRendertime = os.epoch("utc")
     while running do
-      if not renderTimer then
-        renderTimer = os.startTimer(0.05)
+      local ok, err = xpcall(tick, debug.traceback)
+      if not ok then
+        term.setCursorPos(1, 1)
+        term.clear()
+        error(err, 0)
       end
-      local e = table.pack(os.pullEvent())
-      if e[1] == "timer" and e[2] == renderTimer then
-        win.setVisible(false)
-        win.clear()
-        renderTimer = nil
-        local currentTime = os.epoch("utc")
-        self.root:_draw(currentTime - lastRendertime)
-        lastRendertime = currentTime
-        win.setVisible(true)
-        win.redraw()
-      end
-      -- assert(xpcall(self.root.tick, function() print(debug.traceback()) end, self.root, table.unpack(e, 1, e.n)))
-      self.root:tick(table.unpack(e, 1, e.n))
     end
     return retVal
   end
