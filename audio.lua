@@ -69,16 +69,27 @@ local function audio(speakers)
 
     --- Initialize sound system
     ---@alias SpeakerInfo ccTweaked.peripherals.Speaker
-    ---@alias BusySpeaker {peripheral: SpeakerInfo, queue: table[], priority: integer, volume: number?, rep: (fun(): boolean)|boolean|number?, original: table?}
+
+    ---@class BusySpeaker
+    ---@field peripheral SpeakerInfo
+    ---@field queue table[]
+    ---@field priority integer
+    ---@field volume number|fun():number
+    ---@field rep (fun(): boolean)|boolean|number?
+    ---@field original table?
+    ---@field tid integer?
 
     local speakerList = {}
     if not speakers then
         speakerList = { peripheral.find("speaker") }
     end
+    local speakerNameList = {}
     ---@type table<string,SpeakerInfo>
     local availableSpeakers = {}
     ---@type table<string,BusySpeaker>
     local busySpeakers = {}
+    ---@type table<integer,string>
+    local silentSpeakers = {}
 
     for k, v in pairs(speakers or {}) do
         if type(v) == "string" then
@@ -91,15 +102,32 @@ local function audio(speakers)
     end
 
     for k, v in pairs(speakerList) do
-        availableSpeakers[peripheral.getName(v)] = v
+        local name = peripheral.getName(v)
+        availableSpeakers[name] = v
+        speakerNameList[#speakerNameList + 1] = name
     end
 
     ---@param name string
     local function tickSpeaker(name)
         local speaker = busySpeakers[name]
+        if not speaker then
+            silentSpeakers[name] = nil
+            return
+        end
         local sample = table.remove(speaker.queue, 1)
         if sample then
-            speaker.peripheral.playAudio(sample, speaker.volume)
+            local volume = speaker.volume
+            if type(volume) == "function" then
+                volume = volume()
+            end
+            if volume == 0 then
+                local estimatedPlayTime = #sample / 48000
+                local tid = os.startTimer(estimatedPlayTime)
+                silentSpeakers[tid] = name
+                speaker.tid = tid
+                return
+            end
+            speaker.peripheral.playAudio(sample, volume)
             return
         end
         if speaker.rep then
@@ -118,6 +146,11 @@ local function audio(speakers)
                 speaker.queue = shallowClone(speaker.original)
                 return tickSpeaker(name)
             end
+        end
+        if self.tid then
+            os.cancelTimer(self.tid)
+            silentSpeakers[self.tid] = nil
+            self.tid = nil
         end
         busySpeakers[name] = nil
         availableSpeakers[name] = speaker.peripheral
@@ -171,7 +204,7 @@ local function audio(speakers)
     end
     ---Play some audio, returns speaker it was played on if successful, otherwise returns nothing
     ---@param data table
-    ---@param volume number?
+    ---@param volume (fun(): number)|number?
     ---@param priority integer?
     ---@param rep (fun(): boolean)|boolean|integer?
     ---@return BusySpeaker? handle
@@ -200,15 +233,37 @@ local function audio(speakers)
         end
     end
 
-    ---Start ticking the sound system
-    function self.start()
+    local function run()
         while true do
-            local name, speaker = os.pullEvent("speaker_audio_empty")
+            local _, speaker = os.pullEvent("speaker_audio_empty")
             local playingSpeaker = busySpeakers[speaker]
             if playingSpeaker then
                 tickSpeaker(speaker)
             end
         end
+    end
+    local function runEmpty()
+        while true do
+            local _, id = os.pullEvent("timer")
+            local name = silentSpeakers[id]
+            if name then
+                silentSpeakers[id] = nil
+                tickSpeaker(name)
+            end
+        end
+    end
+
+    ---Start ticking the sound system
+    function self.start()
+        parallel.waitForAny(run, runEmpty)
+    end
+
+    function self.debugString()
+        local s = {}
+        for i, v in ipairs(speakerNameList) do
+            s[i] = busySpeakers[v] and "B" or availableSpeakers[v] and "_"
+        end
+        return table.concat(s, "")
     end
 
     return self

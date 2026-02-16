@@ -1,0 +1,9 @@
+Terminated
+stack traceback:
+	[C]: in function 'error'
+	bios.lua:184: in function 'pullEvent'
+	/engine.lua:743: in function </engine.lua:738>
+	[C]: in function 'xpcall'
+	/engine.lua:761: in function 'start'
+	/fnafmenu.lua:227: in main chunk
+	/fileloader.lua:111: in main chunk

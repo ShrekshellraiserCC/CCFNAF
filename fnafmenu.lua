@@ -1,12 +1,19 @@
 local fnaf = require "fnaf"
 local bigfont = require "bigfont"
 
+fnaf.resourceLoader.addTextures({
+    "title",
+    "headshots"
+})
+
+local resources = fnaf.loadResources()
+
 local monitorName = "top"
 local engine = require "engine"
 local g = engine.game(monitorName)
 
-local menuTexture = engine.loadTexture("title.bimg.lwz")
-local headshotsTexture = engine.loadTexture("headshots.bimg.lwz")
+local menuTexture = resources.texture.title
+local headshotsTexture = resources.texture.headshots
 
 local data = {
     highestNightComplete = 1,
@@ -25,7 +32,7 @@ local loadData
 local function runGame(night)
     data.currentNight = night
     saveData()
-    local won = fnaf(night)
+    local won = fnaf.fnaf(night)
     if won then
         data.highestNightComplete = math.max(data.highestNightComplete or 0, night)
         saveData()
@@ -89,7 +96,7 @@ function night6Button:draw(delta)
 end
 
 function night6Button:onClick()
-    local won = fnaf(6)
+    local won = fnaf.fnaf(6)
     if won then
         data.highestNightComplete = math.max(data.highestNightComplete or 5, 6)
         saveData()
@@ -156,6 +163,7 @@ function customNightHeader:draw(delta)
     bigfont.writeOn(self.window, 1, "Customize Night", 1, 1)
 end
 
+g.root:addChild(customNightMenu, 1, 1)
 customNightMenu:addChild(customNightHeader, 3, 3)
 
 local customDifficulties = { 0, 0, 0, 0 }
@@ -184,7 +192,7 @@ function startCustomNight:draw()
 end
 
 function startCustomNight:onClick()
-    local won = fnaf(7, table.unpack(customDifficulties))
+    local won = fnaf.fnaf(7, table.unpack(customDifficulties))
     if won and customDifficulties[1] == 20 and customDifficulties[2] == 20 and customDifficulties[3] == 20 and customDifficulties[4] == 20 then
         data.highestNightComplete = 7
         saveData()
@@ -215,6 +223,5 @@ customNightMenu.active = false
 
 customNightMenu:addChild(backCustomNight, 10, 45)
 
-g.root:addChild(customNightMenu, 1, 1)
 g.setPalette(menuTexture.palette)
 g.start()

@@ -11,3 +11,7 @@ Stage scene naming?
 
 0.216875 scaled images
 21.6875
+
+Audio Channels
+* Fan Buzz
+* Pipe Ambience

@@ -37,147 +37,103 @@ local LOCATIONS = {
 
 setmetatable(LOCATIONS, { __index = function(_, k) error(("Invalid location %s"):format(k)) end })
 
+local monitor = assert(peripheral.wrap("top"), "FNAF requires a 6x4 monitor on top.")
+monitor.setPaletteColor(colors.white, 0xFFFFFF)
+monitor.setPaletteColor(colors.black, 0) -- Assure the palette is something visible
+monitor.setBackgroundColor(colors.black)
+monitor.setTextColor(colors.white)
+monitor.clear()
+monitor.setTextScale(0.5)
+local w, h = monitor.getSize()
+if w < 121 or h < 52 then
+  local eMsg = "FNAF requires at least a 6x4 monitor attached on top."
+  monitor.write(eMsg)
+  error(eMsg, 0)
+end
 
-
+--- Resource loading
+---@type string[]
+local textureFiles               = {
+  "office",
+  "fan",
+  "left_door",
+  "left_button",
+  "right_door",
+  "right_button",
+  "left_bar",
+  "right_bar",
+  "bar",
+  "camera",
+  "map",
+  "cam_1a",
+  "cam_1b",
+  "cam_1c",
+  "cam_2a",
+  "cam_2b",
+  "cam_3",
+  "cam_4a",
+  "cam_4b",
+  "cam_5",
+  "cam_7",
+  "chica_jumpscare",
+  "bonnie_jumpscare",
+  "freddy_jumpscare",
+  "freddy_dark_jumpscare",
+  "foxy_jumpscare",
+  "endscreen"
+}
+local soundFiles                 = {
+  "door",
+  "camera",
+  "fan",
+  "light_buzz",
+  "powerdown",
+  "run",
+  "knock",
+  "scream",
+  "musicbox",
+  "chimes",
+  "horn",
+  "windowscare",
+  "laugh1",
+  "laugh2",
+  "laugh3",
+  "laugh4",
+  "error",
+  "blip",
+  "pipealarm",
+  "panning",
+  "robotvoice",
+  "kitchen1",
+  "kitchen2",
+  "kitchen3",
+  "kitchen4",
+  "circus",
+  "ambience2",
+  "breath1",
+  "breath2",
+  "breath3",
+  "breath4",
+  "interference"
+}
+local optionalSoundFiles         = {
+  "voiceover1",
+  "voiceover2",
+  "voiceover3",
+  "voiceover4",
+  "voiceover5"
+}
+local soundFileFramerateOverride = {
+  light_buzz = 1000,
+  robotvoice = 2000,
+  blip = 1000,
+}
+local resourceLoader             = engine.resourceLoader("top", "FNAF ")
+resourceLoader.addTextures(textureFiles).addSounds(soundFiles).addOptionalSounds(optionalSoundFiles)
 ---@type table<string,BIMG> Texture table
 local texture = {}
 ---@type table<string,table>
 local sound   = {}
---- Resource loading
-do
-  ---@type string[]
-  local textureFiles               = {
-    "office",
-    "fan",
-    "left_door",
-    "left_button",
-    "right_door",
-    "right_button",
-    "left_bar",
-    "right_bar",
-    "bar",
-    "camera",
-    "map",
-    "cam_1a",
-    "cam_1b",
-    "cam_1c",
-    "cam_2a",
-    "cam_2b",
-    "cam_3",
-    "cam_4a",
-    "cam_4b",
-    "cam_5",
-    "cam_7",
-    "chica_jumpscare",
-    "bonnie_jumpscare",
-    "freddy_jumpscare",
-    "freddy_dark_jumpscare",
-    "foxy_jumpscare",
-  }
-  local soundFiles                 = {
-    "door",
-    "camera",
-    "fan",
-    "light_buzz",
-    "powerdown",
-    "run",
-    "knock",
-    "scream",
-    "musicbox",
-    "chimes",
-    "horn",
-    "windowscare",
-    "laugh1",
-    "laugh2",
-    "laugh3",
-    "laugh4",
-    "error",
-    "blip"
-  }
-  local soundFileFramerateOverride = {
-    light_buzz = 1000
-  }
-  local monitor                    = assert(peripheral.wrap("top"), "FNAF Requires a monitor on top.")
-  monitor.setPaletteColor(colors.white, 0xFFFFFF)
-  monitor.setPaletteColor(colors.black, 0) -- Assure the palette is something visible
-  monitor.setBackgroundColor(colors.black)
-  monitor.setTextColor(colors.white)
-  monitor.clear()
-  monitor.setTextScale(0.5)
-  local w, h = monitor.getSize()
-  if w < 121 or h < 52 then
-    local eMsg = "FNAF requires at least a 6x4 monitor attached on top."
-    monitor.write(eMsg)
-    error(eMsg, 0)
-  end
-  local function centerWrite(text, y, size)
-    size = size or 1
-    if size == 0 then
-      monitor.setCursorPos((w - #text) / 2, y)
-      monitor.clearLine()
-      monitor.write(text)
-    else
-      for dy = 1, size * 3 do
-        monitor.setCursorPos((w - #text) / 2, y + dy)
-        monitor.clearLine()
-      end
-      bigfont.writeOn(monitor, size, text, (w - (#text * size * 3)) / 2, y)
-    end
-  end
-  local loadStartTime = os.epoch("utc")
-  centerWrite("FNAF", h / 2 - 10, 2)
-  centerWrite("Loading Textures...", h / 2)
-  local y = h / 2 + 4
-  local function progressBar(v, y)
-    monitor.setCursorPos(1, y)
-    local fChars = math.ceil(w * v)
-    local t = ("\127"):rep(fChars)
-    monitor.write(t .. ("_"):rep(w - fChars))
-  end
-  local function printProgress(v, vt, fn)
-    progressBar(vt, y)
-    progressBar(v, y + 1)
-    centerWrite(fn, y + 2, 0)
-  end
-  local function drawThrobberThread(s)
-    local i = 0
-    while true do
-      os.pullEvent()
-      centerWrite(s .. ("."):rep(i % 4), h / 2)
-      i = i + 1
-    end
-  end
-  local totalTextures = #textureFiles
-  local totalSounds = #soundFiles
-  local totalResources = totalTextures + totalSounds
-  parallel.waitForAny(function()
-    for i, name in ipairs(textureFiles) do
-      printProgress(i / totalTextures, i / totalResources, name)
-      local fn = name .. ".bimg"
-      if not fs.exists(fn) then
-        fn = name .. ".bimg.lwz"
-      end
-      texture[name] = engine.loadTexture(fn, true)
-    end
-  end, function()
-    drawThrobberThread("Loading Textures")
-  end)
-  local textureTime = os.epoch("utc")
-  monitor.clear()
-  centerWrite("FNAF", h / 2 - 10, 2)
-  parallel.waitForAny(function()
-    for i, name in ipairs(soundFiles) do
-      printProgress(i / totalSounds, (i + totalTextures) / totalResources, name)
-      sound[name] = audio.loadAudio(name .. ".dfpwm", true, soundFileFramerateOverride[name])
-    end
-  end, function()
-    drawThrobberThread("Loading Audio")
-  end)
-  local audioTime = os.epoch("utc")
-  print(("*** Done ***\nTextures: %dms\nAudio: %dms\nTotal: %dms")
-    :format(textureTime - loadStartTime, audioTime - textureTime, audioTime - loadStartTime))
-end
-
 
 ---@param night integer
 ---@param freddyDifficulty integer?
@@ -189,7 +145,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
   local scrollWidth     = g.root.w - #texture.office[1][1][1] + 1 -- width of office
   local debugWin        = window.create(term.current(), 1, 1, term.getSize())
 
-  local showDebug       = false
+  local showDebug       = true
 
   local black           = colors.black
   local white           = colors.white
@@ -297,29 +253,80 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
   -- music box has 20% every 5 seconds up to 20 seconds
   -- 20% chance to be jumpscared every 2 seconds
 
-  local endscreenText         = "Uh Oh."
-  local gameEndscreenObject   = engine.object(g.root.w, g.root.h)
-  local gameReturnValue       = false
-  local endscreenBG           = black
-  local endscreenFG           = white
-  local clickDebounceTime     = 0 -- Timer to prevent accidental dismissal of end screen
-  gameEndscreenObject.draw    = function(self, delta)
+  local cameraCenteredX     = math.floor((#texture.cam_1a[1][1][1] - g.root.w) / 2)
+  local endscreenText       = "Uh Oh."
+  local gameEndscreenObject = engine.staticObject(texture.endscreen, 1)
+  local gameReturnValue     = false
+  local endscreenBG         = black
+  local endscreenFG         = white
+  local clickDebounceTime   = 0 -- Timer to prevent accidental dismissal of end screen
+  gameEndscreenObject:addRenderCallback("post", function(self, delta)
     self.window.setBackgroundColor(endscreenBG)
     self.window.setTextColor(endscreenFG)
-    self.window.clear()
     local mh = math.floor(self.h / 2)
-    bigfont.writeOn(self.window, 1, endscreenText, math.floor((self.w - (#endscreenText * 3)) / 2), mh)
-    self.window.setCursorPos((self.w - 19) / 2, mh + 3)
+    if gameReturnValue then
+      if night < 5 then
+        self.window.clear()
+        bigfont.writeOn(self.window, 1, endscreenText, math.floor((self.w - (#endscreenText * 3)) / 2), mh)
+        goto skip
+      end
+      -- we won, display the text on the paycheck
+      local subtext = "(See you next week!)"
+      local payValue = "$120.00"
+      local pay = "One Hundred twenty dollars"
+      local memo = "Valued employee"
+      local date = "11-12-xx"
+      if night == 6 then
+        subtext = "(You've earned some overtime!)"
+        payValue = "$120.50"
+        pay = "One Hundred twenty dollars and 50/100"
+        memo = "employee of the month"
+        date = "11-13-xx"
+      end
+      self.window.setBackgroundColor(colors.white)
+      self.window.setTextColor(colors.black)
+      if night == 7 then
+        bigfont.writeOn(self.window, 1, "Termination Notice", 46, 17)
+        bigfont.writeOn(self.window, 1, "Reason", 46, 25)
+        self.window.setCursorPos(65, 24)
+        self.window.write("Tampering with the animatronics.")
+        self.window.setCursorPos(65, 26)
+        self.window.write("General unprofessionalism. Odor.")
+      else
+        self.window.setCursorPos(math.floor((self.w - #subtext) / 2), 16)
+        self.window.write(subtext)
+        self.window.setCursorPos(48, 27)
+        self.window.write("Pay to: Mike Schmidt")
+        self.window.setCursorPos(47, 29)
+        self.window.write(pay)
+        self.window.setCursorPos(90, 27)
+        self.window.write(payValue)
+        self.window.setCursorPos(50, 34)
+        self.window.write(memo)
+        self.window.setCursorPos(76, 32)
+        self.window.write("Fazbear Entertainment")
+        self.window.setCursorPos(88, 24)
+        self.window.write(date)
+      end
+    else
+      bigfont.writeOn(self.window, 1, endscreenText, math.floor((self.w - (#endscreenText * 3)) / 2), mh)
+    end
+    ::skip::
+    self.window.setBackgroundColor(colors.black)
+    self.window.setTextColor(colors.white)
+    self.window.setCursorPos((self.w - 19) / 2, 49)
     self.window.write("[Touch to continue]")
-  end
+    return true
+  end)
   gameEndscreenObject.visible = false
   gameEndscreenObject.active  = false
   gameEndscreenObject.onClick = function(self, x, y)
     if os.epoch("utc") > clickDebounceTime then
+      soundEngine.stopAllAudio()
       g.exit(gameReturnValue)
     end
   end
-  g.root:addChild(gameEndscreenObject, 1, 1)
+  g.root:addChild(gameEndscreenObject, -2, 1)
   ---@type table<string,AnimatedObject>
   local jumpscares = {}
   ---Show the End screen
@@ -337,6 +344,11 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     endscreenText = reason
     endscreenBG = bg or endscreenBG
     endscreenFG = fg or endscreenFG
+    if retValue then
+      gameEndscreenObject.frame = night == 7 and 3 or night == 6 and 2 or 1
+    else
+      gameEndscreenObject.frame = 4
+    end
     gameEndscreenObject.visible = true
     gameEndscreenObject.active = true
     gameReturnValue = retValue
@@ -350,7 +362,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     local jumpscareObject = engine.animatedObject(texture, "FORWARD", jumpscareOverCallback, 20)
     jumpscareObject.visible = false
     jumpscareObject.animate = false
-    g.root:addChild(jumpscareObject, 1, 1)
+    g.root:addChild(jumpscareObject, 1 - cameraCenteredX, 1)
     jumpscares[name] = jumpscareObject
   end
   addJumpscare("chica", texture.chica_jumpscare)
@@ -382,13 +394,9 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
   ---Return a random value from the provided list, with extra weight on the first option
   ---@param ... any
   ---@return any
-  local function weighted_choice(...)
+  local function choice(...)
     local t = { ... }
-    local rnd = math.random(1, #t + 1)
-    rnd = rnd - 1
-    if rnd == 0 then
-      rnd = 1 -- double % chance of landing on first option
-    end
+    local rnd = math.random(1, #t)
     return t[rnd]
   end
 
@@ -396,6 +404,30 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
   local enteredRoomTime
   local freddyTimer
 
+  ---@type "OFFICE"|"CAMERA"|"CAMERA_ANIM"
+  local state = "OFFICE"
+  local active_camera
+
+
+  local staticMovedCountdown = 0
+  local animatronicMoveSound
+  local function animatronicMoved(from, to)
+    if not (active_camera == from or active_camera == to) then
+      return
+    end
+    staticMovedCountdown = 40
+    if animatronicMoveSound then return end
+    animatronicMoveSound = soundEngine.playAudio(sound.interference, function()
+      return state == "CAMERA" and 1 or 0
+    end, nil, function()
+      staticMovedCountdown = 0
+      animatronicMoveSound = nil
+      return false
+    end)
+  end
+
+  local leftWindowScare = nil
+  local rightWindowScare = nil
   local bonnieObject = create_animatronic("Bonnie", LOCATIONS.STAGE)
   bonnieObject:addTimer(
   ---@param self AnimatronicObject
@@ -403,32 +435,48 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       if math.random(1, 20) <= bonnieDifficulty then
         -- movement succeeds
         if self.location == LOCATIONS.STAGE then
-          self.location = weighted_choice(LOCATIONS.DINING, LOCATIONS.SERVICE_CLOSET)
+          self.location = choice(LOCATIONS.DINING, LOCATIONS.SERVICE_CLOSET)
+          animatronicMoved(LOCATIONS.STAGE, self.location)
         elseif self.location == LOCATIONS.SERVICE_CLOSET then
-          self.location = weighted_choice(LOCATIONS.L_HALL_UPPER, LOCATIONS.DINING)
+          self.location = choice(LOCATIONS.L_HALL_UPPER, LOCATIONS.DINING)
+          animatronicMoved(LOCATIONS.SERVICE_CLOSET, self.location)
         elseif self.location == LOCATIONS.DINING then
-          self.location = weighted_choice(LOCATIONS.L_HALL_UPPER, LOCATIONS.SERVICE_CLOSET)
+          self.location = choice(LOCATIONS.L_HALL_UPPER, LOCATIONS.SERVICE_CLOSET)
+          animatronicMoved(LOCATIONS.DINING, self.location)
         elseif self.location == LOCATIONS.L_HALL_UPPER then
-          self.location = weighted_choice(LOCATIONS.L_HALL_LOWER, LOCATIONS.JANITOR_CLOSET)
+          self.location = choice(LOCATIONS.L_HALL_LOWER, LOCATIONS.JANITOR_CLOSET)
+          animatronicMoved(LOCATIONS.L_HALL_UPPER, self.location)
         elseif self.location == LOCATIONS.JANITOR_CLOSET then
-          self.location = weighted_choice(LOCATIONS.L_HALL_LOWER, LOCATIONS.LEFT_DOOR, LOCATIONS.L_HALL_UPPER)
+          self.location = choice(LOCATIONS.LEFT_DOOR, LOCATIONS.L_HALL_UPPER)
+          animatronicMoved(LOCATIONS.JANITOR_CLOSET, self.location)
         elseif self.location == LOCATIONS.L_HALL_LOWER then
-          self.location = weighted_choice(LOCATIONS.LEFT_DOOR, LOCATIONS.JANITOR_CLOSET)
+          self.location = choice(LOCATIONS.LEFT_DOOR, LOCATIONS.JANITOR_CLOSET)
+          animatronicMoved(LOCATIONS.L_HALL_LOWER, self.location)
         elseif self.location == LOCATIONS.LEFT_DOOR then
           if leftDoor.isOpen then
             enteredRoomTime = enteredRoomTime or os.epoch("utc")
             self.location = LOCATIONS.IN_OFFICE
           else
+            leftWindowScare = nil
             self.location = LOCATIONS.DINING
           end
         end
       end
-      if self.location == LOCATIONS.IN_OFFICE then
+      if self.location == LOCATIONS.IN_OFFICE and state == "CAMERA" then
+        if math.random(1, 2) == 1 then
+          soundEngine.playAudio(sound["breath" .. math.random(1, 4)], function()
+            if state ~= "CAMERA" then
+              return 0
+            end
+            return 1
+          end)
+        end
         if enteredRoomTime + 30000 < os.epoch("utc") then
           jumpscare("bonnie")
         end
       end
     end, 4970, true)
+  local kitchenSoundCounter = 0
   local chicaObject = create_animatronic("Chica", LOCATIONS.STAGE)
   chicaObject:addTimer(
   ---@param self AnimatronicObject
@@ -436,39 +484,58 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       if math.random(1, 20) <= chicaDifficulty then
         if self.location == LOCATIONS.STAGE then
           self.location = LOCATIONS.DINING
+          animatronicMoved(LOCATIONS.STAGE, self.location)
         elseif self.location == LOCATIONS.DINING then
-          self.location = weighted_choice(LOCATIONS.R_HALL_UPPER, LOCATIONS.BATHROOMS)
+          self.location = choice(LOCATIONS.KITCHEN, LOCATIONS.BATHROOMS)
+          animatronicMoved(LOCATIONS.DINING, self.location)
         elseif self.location == LOCATIONS.BATHROOMS then
-          self.location = weighted_choice(LOCATIONS.R_HALL_UPPER, LOCATIONS.KITCHEN)
+          self.location = choice(LOCATIONS.R_HALL_UPPER, LOCATIONS.KITCHEN)
+          animatronicMoved(LOCATIONS.BATHROOMS, self.location)
         elseif self.location == LOCATIONS.KITCHEN then
-          self.location = weighted_choice(LOCATIONS.R_HALL_UPPER, LOCATIONS.BATHROOMS)
+          self.location = choice(LOCATIONS.R_HALL_UPPER, LOCATIONS.BATHROOMS)
+          animatronicMoved(LOCATIONS.KITCHEN, self.location)
         elseif self.location == LOCATIONS.R_HALL_UPPER then
-          self.location = weighted_choice(LOCATIONS.R_HALL_LOWER, LOCATIONS.DINING)
+          self.location = choice(LOCATIONS.R_HALL_LOWER, LOCATIONS.DINING)
+          animatronicMoved(LOCATIONS.R_HALL_UPPER, self.location)
         elseif self.location == LOCATIONS.R_HALL_LOWER then
-          self.location = weighted_choice(LOCATIONS.RIGHT_DOOR, LOCATIONS.R_HALL_UPPER)
+          self.location = choice(LOCATIONS.RIGHT_DOOR, LOCATIONS.R_HALL_UPPER)
+          animatronicMoved(LOCATIONS.R_HALL_LOWER, self.location)
         elseif self.location == LOCATIONS.RIGHT_DOOR then
           if rightDoor.isOpen then
             enteredRoomTime = enteredRoomTime or os.epoch("utc")
             self.location = LOCATIONS.IN_OFFICE
           else
-            self.location = LOCATIONS.DINING
+            rightWindowScare = nil
+            self.location = LOCATIONS.R_HALL_UPPER
           end
         end
       end
-      if self.location == LOCATIONS.IN_OFFICE then
+      kitchenSoundCounter = kitchenSoundCounter + 1
+      if self.location == LOCATIONS.KITCHEN and math.random(1, 2) == 1 and kitchenSoundCounter > 3 then
+        soundEngine.playAudio(sound["kitchen" .. math.random(1, 4)], function()
+          if state == "CAMERA" and active_camera == LOCATIONS.KITCHEN then
+            return 0.7
+          end
+          return 0.25
+        end)
+        kitchenSoundCounter = 0
+      end
+      if self.location == LOCATIONS.IN_OFFICE and state == "CAMERA" then
+        soundEngine.playAudio(sound["breath" .. math.random(1, 4)], function()
+          if state ~= "CAMERA" then
+            return 0
+          end
+          return 1
+        end)
         if enteredRoomTime + 30000 < os.epoch("utc") then
           jumpscare("chica")
         end
       end
     end, 4980, true)
 
-  ---@type "OFFICE"|"CAMERA"|"CAMERA_ANIM"
-  local state = "OFFICE"
-
   local freddyObject = create_animatronic("Freddy", LOCATIONS.STAGE)
   local freddyQueuedMove
   local freddyMoveWhenCamerasLower
-  local active_camera
   local freddyHasSucceededMovement
   local function moveFreddy()
     if freddyObject.location == LOCATIONS["4B"] then
@@ -476,14 +543,19 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       return
     elseif freddyObject.location == LOCATIONS["1A"] then
       freddyObject.location = LOCATIONS["1B"]
+      animatronicMoved(LOCATIONS["1A"], LOCATIONS["1B"])
     elseif freddyObject.location == LOCATIONS["1B"] then
       freddyObject.location = LOCATIONS["7"]
+      animatronicMoved(LOCATIONS["1B"], LOCATIONS["7"])
     elseif freddyObject.location == LOCATIONS["7"] then
       freddyObject.location = LOCATIONS["6"]
+      animatronicMoved(LOCATIONS["7"], LOCATIONS["6"])
     elseif freddyObject.location == LOCATIONS["6"] then
       freddyObject.location = LOCATIONS["4A"]
+      animatronicMoved(LOCATIONS["6"], LOCATIONS["4A"])
     elseif freddyObject.location == LOCATIONS["4A"] then
       freddyObject.location = LOCATIONS["4B"]
+      animatronicMoved(LOCATIONS["4A"], LOCATIONS["4B"])
     end
     if freddyObject.location ~= LOCATIONS.IN_OFFICE then
       soundEngine.playAudio(sound["laugh" .. math.random(1, 4)])
@@ -596,6 +668,23 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
   ---@type "start"|"freddy"|"end"?
   local powerOut = nil
   fanSpeaker = soundEngine.playAudio(sound.fan, 0.8, nil, function() return not powerOut end)
+  local dangerZones = {
+    [LOCATIONS["2A"]] = true,
+    [LOCATIONS["2B"]] = true,
+    [LOCATIONS["4A"]] = true,
+    [LOCATIONS["4B"]] = true,
+    [LOCATIONS.JANITOR_CLOSET] = true,
+    [LOCATIONS.LEFT_DOOR] = true,
+    [LOCATIONS.RIGHT_DOOR] = true
+  }
+  local pipeAlarm = soundEngine.playAudio(sound.pipealarm, function()
+    local dangerLevel = (dangerZones[bonnieObject.location]) and 1 or 0
+    dangerLevel = dangerLevel + (dangerZones[chicaObject.location] and 1 or 0)
+    dangerLevel = dangerLevel + (dangerZones[freddyObject.location] and 1 or 0)
+    return dangerLevel / 3
+  end, nil, function()
+    return not powerOut
+  end)
 
   local officeView = engine.object(gameObject.w, gameObject.h)
   officeView.label = "officeView"
@@ -649,6 +738,30 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
   cameraButton.z = 2
   officeView:addChild(cameraButton, 25, 47)
 
+  local voiceoverFile = sound["voiceover" .. night]
+  if voiceoverFile then
+    local muteButton = engine.object(10, 1)
+    muteButton.z = 2
+    local voiceoverAudio = soundEngine.playAudio(voiceoverFile, nil, nil, function()
+      muteButton.visible = false
+      muteButton.active = false
+      return false
+    end)
+    function muteButton:draw()
+      self.window.clear()
+      self.window.setCursorPos(1, 1)
+      self.window.write("MUTE CALL")
+    end
+
+    function muteButton:onClick()
+      soundEngine.cancelAudio(voiceoverAudio)
+      self.visible = false
+      self.active = false
+    end
+
+    officeView:addChild(muteButton, 20, 5)
+  end
+
   local batteryIndicator = engine.object(15, 4)
   batteryIndicator.draw = function(self, delta)
     self.window.setBackgroundColor(black)
@@ -688,14 +801,28 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     if time == 6 then
       gameWin()
     end
-    if time == 2 then
+    if time == 1 then
+      local ambienceCountdown = 0
+      -- Ambience generation
+      gameObject:addTimer(function(self)
+        ambienceCountdown = ambienceCountdown - 1
+        if ambienceCountdown < 0 and math.random(1, 3) == 1 then
+          soundEngine.playAudio(sound.ambience2)
+          ambienceCountdown = 11
+        end
+      end, 10000, true)
+    elseif time == 2 then
       bonnieDifficulty = bonnieDifficulty + 1
+      gameObject:addTimer(function(self)
+        soundEngine.playAudio(sound.circus)
+      end, math.random(1, 240) * 1000)
     elseif time == 3 or time == 4 then
       bonnieDifficulty = bonnieDifficulty + 1
       chicaDifficulty = chicaDifficulty + 1
       foxyDifficulty = foxyDifficulty + 1
     end
   end
+
 
   -- Time control
   gameObject:addTimer(function(self)
@@ -763,10 +890,18 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       return true
     end)
 
-    local buzzSpeaker
+    local buzzSpeaker = soundEngine.playAudio(sound.light_buzz, function()
+      return lightOn and 1 or 0
+    end, 2, function() return not powerOut end)
 
     local function onClickGen(door, lightMode)
+      local disabled = (lightMode == "left" and bonnieObject.location == LOCATIONS.IN_OFFICE)
+          or (lightMode == "right" and chicaObject.location == LOCATIONS.IN_OFFICE)
       return function(self, x, y)
+        if disabled then
+          soundEngine.playAudio(sound.error)
+          return
+        end
         if y < 7 then
           -- door
           if not door.animate then
@@ -780,34 +915,25 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
             self.channel = soundEngine.playAudio(sound.door)
           end
         else
-          if buzzSpeaker then
-            soundEngine.cancelAudio(buzzSpeaker)
-            buzzSpeaker = nil
-          end
           if lightOn == lightMode then
             power_usage = power_usage - 1
             lightOn = nil
           else
             if lightMode == "left" then
-              if bonnieObject.location == LOCATIONS.LEFT_DOOR then
+              if bonnieObject.location == LOCATIONS.LEFT_DOOR and not leftWindowScare then
                 soundEngine.playAudio(sound.windowscare, nil, 8)
-              elseif bonnieObject.location == LOCATIONS.IN_OFFICE then
-                soundEngine.playAudio(sound.error, nil, 4)
-                return
+                leftWindowScare = true
               end
             elseif lightMode == "right" and chicaObject.location == LOCATIONS.RIGHT_DOOR then
-              if chicaObject.location == LOCATIONS.RIGHT_DOOR then
+              if chicaObject.location == LOCATIONS.RIGHT_DOOR and not rightWindowScare then
                 soundEngine.playAudio(sound.windowscare, nil, 8)
-              elseif chicaObject.location == LOCATIONS.IN_OFFICE then
-                soundEngine.playAudio(sound.error, nil, 4)
-                return
+                rightWindowScare = true
               end
             end
             if not lightOn then
               power_usage = power_usage + 1
             end
             lightOn = lightMode
-            buzzSpeaker = soundEngine.playAudio(sound.light_buzz, 1, 2, function() return not powerOut end)
           end
         end
       end
@@ -877,8 +1003,21 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     officeView:addChild(lookLeft, 2, 2)
   end
 
+  if night >= 4 then
+    soundEngine.playAudio(sound.robotvoice, function()
+      if state == "CAMERA" and active_camera == LOCATIONS["2B"] and bonnieObject.location == LOCATIONS["2B"] then
+        return 1
+      elseif state == "CAMERA" and active_camera == LOCATIONS["4B"] and chicaObject.location == LOCATIONS["4B"] then
+        return 1
+      end
+      return 0
+    end, nil, function()
+      return not powerOut
+    end)
+  end
+
   local CAMERAS = {}
-  local easter_egg_active = false
+  local easterEggActive = false
   --- Change active camera
   local function setCamera(location)
     for _, camera in pairs(CAMERAS) do
@@ -886,7 +1025,8 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     end
     active_camera = location
     CAMERAS[location].visible = true
-    easter_egg_active = math.random(1, 15) == 1
+    staticMovedCountdown = 5
+    easterEggActive = math.random(1, 200) == 1
     soundEngine.playAudio(sound.blip)
   end
 
@@ -912,12 +1052,36 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     gameObject:addChild(cameraContainer, 1, 1)
     cameraContainer:addChild(cameraViewbox, 1, 1)
 
+    ---@param self Object
+    local function cameraStaticOverlay(self)
+      if staticMovedCountdown > 0 then
+        staticMovedCountdown = staticMovedCountdown - 1
+        for y = 1, self.h do
+          self.window.setCursorPos(1, y)
+          local w = 0
+          while w < self.w do
+            local i = math.random(1, 50)
+            local ch = math.random(1, 2) == 1 and "*" or " "
+            self.window.write((ch):rep(i))
+            w = w + i
+          end
+        end
+      end
+      for i = 1, 100 do
+        local x, y = math.random(1, self.w), math.random(1, self.h)
+        self.window.setCursorPos(x, y)
+        self.window.write(("-"):rep(math.random(1, 10)))
+      end
+      return true
+    end
+
     ---@param location LOCATION
     ---@param texture BIMG
     ---@param statefunc fun(self: Object): integer
     local function addCamera(location, texture, statefunc)
       local cam = engine.statedObject(texture, statefunc)
       cameraViewbox:addChild(cam, 1, 1)
+      cam:addRenderCallback("post", cameraStaticOverlay)
       CAMERAS[location] = cam
     end
 
@@ -926,7 +1090,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       local chicaHere = chicaObject.location == LOCATIONS["1A"]
       local freddyHere = freddyObject.location == LOCATIONS["1A"]
       if bonnieHere and chicaHere then
-        if easter_egg_active then
+        if easterEggActive then
           return 7 -- staring at camera
         end
         return 6
@@ -935,7 +1099,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       elseif chicaHere then
         return 5
       elseif freddyHere then
-        if easter_egg_active then
+        if easterEggActive then
           return 3 -- staring at camera
         end
         return 2
@@ -945,7 +1109,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
 
     addCamera(LOCATIONS["2B"], texture.cam_2b, function(self)
       if bonnieObject.location == LOCATIONS["2B"] then
-        if easter_egg_active then
+        if easterEggActive then
           return 5
         end
         if night >= 4 then
@@ -953,7 +1117,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
         end
         return 3
       end
-      if easter_egg_active then
+      if easterEggActive then
         return 2
       end
       -- TODO golden freddy? Frame 6
@@ -1002,7 +1166,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       if freddyObject.location == LOCATIONS["7"] then
         return 4
       elseif chicaObject.location == LOCATIONS["7"] then
-        if easter_egg_active then
+        if easterEggActive then
           return 3
         end
         return 2
@@ -1012,12 +1176,12 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
 
     addCamera(LOCATIONS["5"], texture.cam_5, function(self)
       if bonnieObject.location == LOCATIONS["5"] then
-        if easter_egg_active then
+        if easterEggActive then
           return 3
         end
         return 2
       end
-      if easter_egg_active then
+      if easterEggActive then
         return 4
       end
       return 1
@@ -1042,14 +1206,14 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
 
     addCamera(LOCATIONS["4A"], texture.cam_4a, function(self)
       if chicaObject.location == LOCATIONS["4A"] then
-        if easter_egg_active then
+        if easterEggActive then
           return 3
         end
         return 2
       elseif freddyObject.location == LOCATIONS["4A"] then
         return 4
       end
-      if easter_egg_active then
+      if easterEggActive then
         return 5
       end
       return 1
@@ -1057,7 +1221,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
 
     addCamera(LOCATIONS["4B"], texture.cam_4b, function(self)
       if chicaObject.location == LOCATIONS["4B"] then
-        if easter_egg_active then
+        if easterEggActive then
           return 4
         end
         if night >= 4 then
@@ -1284,7 +1448,8 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     debugWin.clear()
     debugWin.setCursorPos(1, 1)
     setColors(colors.white, colors.black)
-    debugWin.write("FNAF DEBUG MENU")
+    debugWin.write("FNAF DEBUG MENU  SPK=")
+    debugWin.write(soundEngine.debugString())
     for k, v in ipairs(debugButtons) do
       setColors(colors.white, colors.black)
       if v.type == "ANIMATRONIC" then
@@ -1314,10 +1479,14 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     if b.type == "ANIMATRONIC" then
       selectedDebugAnimatronic = b.name
     elseif b.type == "CAMERA" then
+      local ol = debugAnimatronicLookup[selectedDebugAnimatronic].location
       debugAnimatronicLookup[selectedDebugAnimatronic].location = LOCATIONS[b.name]
+      animatronicMoved(ol, debugAnimatronicLookup[selectedDebugAnimatronic].location)
     elseif b.type == "DOOR" then
+      local ol = debugAnimatronicLookup[selectedDebugAnimatronic].location
       debugAnimatronicLookup[selectedDebugAnimatronic].location =
           b.name == "L" and LOCATIONS.LEFT_DOOR or LOCATIONS.RIGHT_DOOR
+      animatronicMoved(ol, debugAnimatronicLookup[selectedDebugAnimatronic].location)
     elseif b.type == "OFFICE" then
       debugAnimatronicLookup[selectedDebugAnimatronic].location = LOCATIONS.IN_OFFICE
       enteredRoomTime = os.epoch("utc")
@@ -1373,4 +1542,15 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
   return gameReturnValue
 end
 
-return fnaf
+local function loadResources()
+  local resources = resourceLoader.validate().load()
+  texture = resources.texture
+  sound = resources.sound
+  return resources
+end
+
+return {
+  fnaf = fnaf,
+  resourceLoader = resourceLoader,
+  loadResources = loadResources
+}

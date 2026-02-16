@@ -583,30 +583,9 @@ end
 local lualzw = require "lualzw"
 
 local t0 = os.epoch("utc")
-local function loadSBIMGRaw(s)
+local function loadLWZRaw(s)
   local i = 1
-  local w, h, frames, hasPalette, i = string.unpack("HHHB", s, i)
   local bimg = loadBIMGRaw(lualzw.decompress(s))
-  -- if hasPalette ~= 0 then
-  --   bimg.palette = {}
-  --   for c = 0, 15 do
-  --     local col
-  --     col, i = string.unpack("I3", s, i)
-  --     bimg.palette[c] = { col }
-  --   end
-  -- end
-  -- local fs = s:sub(i)
-  -- i = 1
-  -- for frame = 1, frames do
-  --   bimg[frame] = {}
-  --   for y = 1, h do
-  --     bimg[frame][y] = {}
-  --     local line = bimg[frame][y]
-  --     line[1], i = s:sub(i, i + w - 1), i + w
-  --     line[2], i = unpackLine(fs, i, w)
-  --     line[3], i = unpackLine(fs, i, w)
-  --   end
-  -- end
   if t0 + 1000 < os.epoch('utc') then
     t0 = os.epoch 'utc'
     os.queueEvent("fakeevent")
@@ -636,42 +615,14 @@ local function packLine(s)
   return table.concat(ns, "")
 end
 
-local function serializeSBIMG(img)
-  -- local w, h, frames = #img[1][1][1], #img[1], #img
-  -- local header = string.pack("HHHB", w, h, frames, img.palette and 1 or 0)
-  -- local s = {}
-  -- if img.palette then
-  --   for v = 0, 15 do
-  --     local r, g, b = table.unpack(img.palette[v] or { 0 })
-  --     if g and b then
-  --       r = colors.packRGB(r, g, b)
-  --     end
-  --     s[#s + 1] = string.pack("I3", r)
-  --   end
-  -- end
-  -- for frame, data in ipairs(img) do
-  --   for y, line in ipairs(data) do
-  --     s[#s + 1] = line[1]
-  --     s[#s + 1] = packLine(line[2])
-  --     s[#s + 1] = packLine(line[3])
-  --   end
-  -- end
-  -- return header .. (table.concat(s, ""))
+local function serializeLWZ(img)
   return lualzw.compress(textutils.serialise(img))
 end
 
-local function saveTexture(filename, img, verbose)
-  local t0 = os.epoch("utc")
-  if verbose then
-    print(("Saving textures.%s..."):format(filename))
-  end
-  local s = serializeSBIMG(img)
-  local f = assert(fs.open(filename, "w"))
-  f.write(s)
-  f.close()
-  if verbose then
-    print(("Saved textures.%s in %.2fsec"):format(filename, (os.epoch("utc") - t0) / 1000))
-  end
+local function loadGZRaw(s)
+  local gzdecompress = require("gzdecompress")
+  local ns = gzdecompress.decompressGZ(s)
+  return loadBIMGRaw(ns)
 end
 
 ---@param filename string
@@ -687,7 +638,9 @@ local function loadTexture(filename, verbose)
   if filename:sub(-5) == ".bimg" then
     texture = loadBIMGRaw(s) --[[@as BIMG]]
   elseif filename:sub(-9) == ".bimg.lwz" then
-    texture = loadSBIMGRaw(s) --[[@as BIMG]]
+    texture = loadLWZRaw(s) --[[@as BIMG]]
+  elseif filename:sub(-8) == ".bimg.gz" then
+    texture = loadGZRaw(s)
   end
   assert(texture, ("Failed to load textures.%s!"):format(filename))
   if verbose then
@@ -696,17 +649,21 @@ local function loadTexture(filename, verbose)
   return texture
 end
 
+---@class StaticObject : Object
+---@field frame integer
+---@field image BIMG
+
 ---Create a simple static image object
 ---@param texture BIMG
 ---@param frame integer?
----@return Object
+---@return StaticObject
 local function staticObject(texture, frame)
   local bimg = texture
   local o = object(#bimg[1][1][1], #bimg[1])
   o.frame = frame or 1
   o.image = bimg
   o.draw = drawBIMGFrame
-  return o
+  return o --[[@as StaticObject]]
 end
 
 ---Create a simple animated image object
@@ -803,8 +760,21 @@ local function context(displayName)
     while running do
       local ok, err = xpcall(tick, debug.traceback)
       if not ok then
-        term.setCursorPos(1, 1)
-        term.clear()
+        win.setTextColor(colors.red)
+        win.setBackgroundColor(colors.black)
+        win.clear()
+        win.setPaletteColor(colors.red, 0xFF0000)
+        win.setCursorPos(1, 1)
+        local f = assert(fs.open("error.txt", "w"))
+        f.write(err)
+        f.close()
+        win.write("Whoops! This program crashed! The error has been written to error.txt")
+        ---@cast err string
+        local lines = require "cc.strings".wrap(err, w)
+        for i, v in ipairs(lines) do
+          win.setCursorPos(2, i + 1)
+          win.write(v)
+        end
         error(err, 0)
       end
     end
@@ -827,6 +797,454 @@ local function context(displayName)
   return self
 end
 
+local bigfont = require "bigfont"
+---@param monitor ccTweaked.peripherals.Monitor
+---@param w integer
+---@param text [string,string,string]
+---@param y integer
+---@param size integer?
+local function centerBlit(monitor, w, text, y, size)
+  size = size or 1
+  if size == 0 then
+    monitor.setCursorPos((w - #text[1]) / 2, y)
+    monitor.clearLine()
+    monitor.blit(text[1], text[2], text[3])
+  else
+    for dy = 1, size * 3 do
+      monitor.setCursorPos((w - #text[1]) / 2, y + dy)
+      monitor.clearLine()
+    end
+    bigfont.blitOn(monitor, size, text[1], text[2], text[3], (w - (#text[1] * size * 3)) / 2, y)
+  end
+end
+---@param monitor ccTweaked.peripherals.Monitor
+---@param w integer
+---@param text string
+---@param y integer
+---@param size integer?
+local function centerWrite(monitor, w, text, y, size)
+  size = size or 1
+  if size == 0 then
+    monitor.setCursorPos((w - #text) / 2, y)
+    monitor.clearLine()
+    monitor.write(text)
+  else
+    for dy = 1, size * 3 do
+      monitor.setCursorPos((w - #text) / 2, y + dy)
+      monitor.clearLine()
+    end
+    bigfont.writeOn(monitor, size, text, (w - (#text * size * 3)) / 2, y)
+  end
+end
+
+---@param monitor ccTweaked.peripherals.Monitor
+---@param w integer
+---@param v number
+---@param y integer
+local function progressBar(monitor, w, v, y)
+  monitor.setCursorPos(1, y)
+  local fChars = math.ceil(w * v)
+  local t = ("\127"):rep(fChars)
+  monitor.write(t .. ("\140"):rep(w - fChars))
+end
+---@param monitor ccTweaked.peripherals.Monitor
+local function printProgress(monitor, v, vt, fn)
+  local w, h = monitor.getSize()
+  local y = h - 3
+  progressBar(monitor, w, vt, y)
+  progressBar(monitor, w, v, y + 1)
+  centerWrite(monitor, w, fn, y + 2, 0)
+end
+
+local function audioFilenameProvider(id)
+  return { id .. ".dfpwm" }
+end
+local function audioLoader(fn)
+  local audio = require "audio"
+  return audio.loadAudio(fn, true)
+end
+local function textureFilenameProvider(id)
+  return {
+    id .. ".bimg",
+    id .. ".bimg.gz",
+  }
+end
+local function textureLoader(fn)
+  return loadTexture(fn, true)
+end
+
+local throbberBimg = {
+  {
+    {
+      "\x00\x97\x83\x83\x94\x00",
+      "1000f1",
+      "ffff0f",
+    },
+    {
+      "\x80\x82\x9b\x98\x81\x80",
+      "00f000",
+      "ff0fff",
+    },
+    {
+      "\x80\x9f\x86\x89\x90\x80",
+      "0f0000",
+      "f0ffff",
+    },
+    {
+      "\x00\x8a\x8f\x8f\x85\x00",
+      "1dddd1",
+      "f0000f",
+    },
+  },
+  {
+    {
+      "\x80\x9f\x86\x94\x80\x00",
+      "0f0001",
+      "f0ffff",
+    },
+    {
+      "\x98\x81\x80\x99\x8f\x90",
+      "0000f0",
+      "ffff0f",
+    },
+    {
+      "\x82\x83\x99\x87\x9f\x87",
+      "00ffd0",
+      "ff0d0f",
+    },
+    {
+      "\x00\x80\x8a\x87\x81\x00",
+      "100d01",
+      "fff0ff",
+    },
+  },
+  {
+    {
+      "\x8f\x90\x80\x80\x9f\x8f",
+      "f000ff",
+      "0fff00",
+    },
+    {
+      "\x95\x82\x9b\x98\x81\x95",
+      "00f00d",
+      "ff0fd0",
+    },
+    {
+      "\x95\x9f\x86\x89\x90\x95",
+      "0f000d",
+      "d0ffd0",
+    },
+    {
+      "\x83\x81\x80\x80\x82\x83",
+      "000000",
+      "ffffff",
+    },
+  },
+  {
+    {
+      "\x00\x80\x97\x89\x90\x00",
+      "10f001",
+      "ff0fff",
+    },
+    {
+      "\x9f\x8f\x91\x80\x82\x9b",
+      "fff00f",
+      "000dd0",
+    },
+    {
+      "\x89\x90\x9d\x9b\x83\x81",
+      "00f000",
+      "ffdfff",
+    },
+    {
+      "\x00\x82\x9b\x85\x80\x80",
+      "10f000",
+      "ff0fff",
+    },
+  },
+  {
+    {
+      "\x00\x97\x83\x83\x94\x00",
+      "1000d1",
+      "fddd0f",
+    },
+    {
+      "\x80\x82\x8b\x87\x81\x80",
+      "00dd00",
+      "ff00ff",
+    },
+    {
+      "\x80\x9f\x87\x8b\x90\x80",
+      "0f0000",
+      "f0fdff",
+    },
+    {
+      "\x00\x8a\x8f\x8f\x85\x00",
+      "1dffd1",
+      "f0000f",
+    },
+  },
+  {
+    {
+      "\x00\x97\x83\x83\x94\x00",
+      "1000f1",
+      "ffff0f",
+    },
+    {
+      "\x80\x82\x8b\x87\x81\x80",
+      "00dd00",
+      "ff00ff",
+    },
+    {
+      "\x80\x9f\x87\x8b\x90\x80",
+      "0f0000",
+      "f0ffff",
+    },
+    {
+      "\x00\x8a\x8f\x8f\x85\x00",
+      "1dddd1",
+      "f0000f",
+    },
+  },
+  {
+    {
+      "\x00\x97\x83\x83\x94\x00",
+      "1000f1",
+      "ffff0f",
+    },
+    {
+      "\x80\x82\x8b\x87\x81\x80",
+      "00fd00",
+      "ff00ff",
+    },
+    {
+      "\x80\x9f\x87\x8b\x90\x80",
+      "0f0000",
+      "f0ffff",
+    },
+    {
+      "\x00\x8a\x8f\x8f\x85\x00",
+      "1dddd1",
+      "f0000f",
+    },
+  },
+  version = "1.0.0",
+  creator = "prototuipe",
+  width = 6,
+  height = 4,
+  animated = false,
+}
+local function resourceLoader(displayName, gameName)
+  local monitor = assert(peripheral.wrap(displayName), "Monitor required for resourceLoader")
+  local w, h = monitor.getSize()
+  local function drawThrobberThread(s)
+    local i = 0
+    while true do
+      os.pullEvent()
+      local frame = throbberBimg[i % #throbberBimg + 1]
+      for y = 1, 4 do
+        monitor.setTextColor(colors.white)
+        monitor.setBackgroundColor(colors.black)
+        centerBlit(monitor, w, frame[y], 20 + ((y - 1) * 3), 1)
+      end
+      i = i + 1
+      monitor.setTextColor(colors.white)
+      monitor.setBackgroundColor(colors.black)
+    end
+  end
+  ---@alias FilenameProvider fun(s:string):string[]
+  ---@alias FileLoader fun(s:string):any
+  ---@alias ResourceCollection {fnProvider:FilenameProvider,loader:FileLoader,files:string[],optional:string[],name:string,count:integer}
+  local collections = {}
+  local self = {}
+  local totalResources = 0
+  function self.addCollection(name, fnProvider, loader)
+    collections[name] = {
+      fnProvider = fnProvider,
+      loader = loader,
+      files = {},
+      optional = {},
+      name = name,
+      count = 0
+    }
+    return self
+  end
+
+  ---@param name string
+  ---@param resources string[]
+  function self.addResources(name, resources)
+    local collection = assert(collections[name], ("Invalid collection %s"):format(name))
+    for i, v in ipairs(resources) do
+      collection.files[#collection.files + 1] = v
+      collection.count = collection.count + 1
+      totalResources = totalResources + 1
+    end
+    return self
+  end
+
+  ---@param name string
+  ---@param resources string[]
+  function self.addOptionalResources(name, resources)
+    local collection = assert(collections[name], ("Invalid collection %s"):format(name))
+    for i, v in ipairs(resources) do
+      collection.optional[#collection.optional + 1] = v
+      collection.count = collection.count + 1
+      totalResources = totalResources + 1
+    end
+    return self
+  end
+
+  local resources = {}
+  local function getExistingFn(fns)
+    for i, v in ipairs(fns) do
+      if fs.exists(v) then
+        return v
+      end
+    end
+  end
+  ---@param collection ResourceCollection
+  ---@param location string
+  ---@param optional boolean
+  local function processFile(collection, location, optional)
+    local fn = getExistingFn(collection.fnProvider(location))
+    if optional and not fn then return end
+    assert(fn, ("Unable to find file for resource %s"):format(location))
+    local d = collection.loader(fn)
+    return d
+  end
+  local j = 0
+  local timings = {}
+  ---@param collection ResourceCollection
+  local function processCollection(collection)
+    centerWrite(monitor, w, gameName, h / 2 - 15, 2)
+    centerWrite(monitor, w, "Loading " .. collection.name, h - 6)
+    local t0 = os.epoch("utc")
+    parallel.waitForAny(function()
+      resources[collection.name] = {}
+      for i, v in ipairs(collection.files) do
+        printProgress(monitor, i / collection.count, j / totalResources, v)
+        resources[collection.name][v] = processFile(collection, v, false)
+        j = j + 1
+      end
+      for i, v in ipairs(collection.optional) do
+        printProgress(monitor, (i + #collection.files) / collection.count, j / totalResources, v)
+        resources[collection.name][v] = processFile(collection, v, true)
+        j = j + 1
+      end
+    end, function()
+      drawThrobberThread()
+    end)
+    timings[collection.name] = os.epoch("utc") - t0
+  end
+
+  local function validateCollection(collection)
+    for i, v in ipairs(collection.files) do
+      local fn = getExistingFn(collection.fnProvider(v))
+      if not fn then
+        error(("Unable to find file for resource %s"):format(v))
+      end
+    end
+  end
+
+  function self.validate()
+    for k, v in pairs(collections) do
+      validateCollection(v)
+    end
+    return self
+  end
+
+  local function timeUnitStr(ms)
+    local s = ms / 1000
+    local m = s / 60
+    if m >= 1 then
+      m = math.floor(m)
+      s = s - (m * 60)
+      ms = ms - (m * 60 * 1000)
+    end
+    if s >= 1 then
+      s = math.floor(s)
+      ms = ms - (s * 1000)
+    end
+    return ("%d:%02d:%03d"):format(m, s, ms)
+  end
+
+  function self.load()
+    local loadStartTime = os.epoch("utc")
+    j = 0
+    resources = {}
+    for k, v in pairs(collections) do
+      processCollection(v)
+    end
+    local totalTime = os.epoch("utc") - loadStartTime
+    print("*** Done ***")
+    for k, v in pairs(timings) do
+      print(k .. ":", timeUnitStr(v))
+    end
+    print("Total:", timeUnitStr(totalTime))
+    return resources
+  end
+
+  self.addCollection("texture", textureFilenameProvider, textureLoader)
+  self.addCollection("sound", audioFilenameProvider, audioLoader)
+
+  function self.addTextures(resources)
+    return self.addResources("texture", resources)
+  end
+
+  function self.addOptionalTextures(resources)
+    return self.addOptionalResources("texture", resources)
+  end
+
+  function self.addSounds(resources)
+    return self.addResources("sound", resources)
+  end
+
+  function self.addOptionalSounds(resources)
+    return self.addOptionalResources("sound", resources)
+  end
+
+  return self
+end
+
+
+
+-- local totalTextures = #textureFiles
+-- local totalSounds = #soundFiles + #optionalSoundFiles
+-- local totalResources = totalTextures + totalSounds
+-- parallel.waitForAny(function()
+--   for i, name in ipairs(textureFiles) do
+--     local fn = name .. ".bimg"
+--     if not fs.exists(fn) then
+--       fn = name .. ".bimg.gz"
+--     end
+--     printProgress(i / totalTextures, i / totalResources, name, fs.getSize(fn))
+--     texture[name] = engine.loadTexture(fn, true)
+--   end
+-- end, function()
+--   drawThrobberThread("Loading Textures")
+-- end)
+-- local textureTime = os.epoch("utc")
+-- monitor.clear()
+-- centerWrite(monitor, w, "FNAF", h / 2 - 10, 2)
+-- parallel.waitForAny(function()
+--   for i, name in ipairs(soundFiles) do
+--     local fn = name .. ".dfpwm"
+--     printProgress(i / totalSounds, (i + totalTextures) / totalResources, name, fs.getSize(fn))
+--     sound[name] = audio.loadAudio(name .. ".dfpwm", true, soundFileFramerateOverride[name])
+--   end
+--   for i, name in ipairs(optionalSoundFiles) do
+--     local fn = name .. ".dfpwm"
+--     if fs.exists(fn) then
+--       printProgress((i + #soundFiles) / totalSounds, (i + totalTextures + #soundFiles) / totalResources, name,
+--         fs.getSize(fn))
+--       sound[name] = audio.loadAudio(fn, true, soundFileFramerateOverride[name])
+--     end
+--   end
+-- end, function()
+--   drawThrobberThread("Loading Audio")
+-- end)
+-- local audioTime = os.epoch("utc")
+
 return {
   game = context,
   object = object,
@@ -836,5 +1254,5 @@ return {
   animatedObject = animatedObject,
   statedObject = statedObject,
   loadTexture = loadTexture,
-  saveTexture = saveTexture
+  resourceLoader = resourceLoader
 }
