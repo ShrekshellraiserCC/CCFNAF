@@ -1,6 +1,10 @@
 local fnaf = require "fnaf"
 local bigfont = require "bigfont"
 
+local monitorName = assert(select(1, ...), "fnafmenu.lua [monitor]")
+
+fnaf.setMonitor(monitorName)
+
 fnaf.resourceLoader.addTextures({
     "title",
     "headshots"
@@ -8,7 +12,6 @@ fnaf.resourceLoader.addTextures({
 
 local resources = fnaf.loadResources()
 
-local monitorName = "top"
 local engine = require "engine"
 local g = engine.game(monitorName)
 
@@ -151,8 +154,11 @@ function loadData()
     end
     resumedNight = "Night " .. (data.currentNight or 1)
     continueGameButton.visible = data.currentNight ~= nil
+    continueGameButton.active = data.currentNight ~= nil
     night6Button.visible = (data.highestNightComplete or 0) >= 5
+    night6Button.active = (data.highestNightComplete or 0) >= 5
     customNightButton.visible = (data.highestNightComplete or 0) >= 6
+    customNightButton.active = (data.highestNightComplete or 0) >= 6
 end
 
 loadData()

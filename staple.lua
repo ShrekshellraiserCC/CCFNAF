@@ -29,6 +29,7 @@ local function fastwrap(side)
                     return native.call(peripheral.getName(v), "callRemote", side, method, ...)
                 end
             end
+            wrapped.name = side
             return wrapped
         end
     end
@@ -37,7 +38,7 @@ end
 
 ---Create a new Stapled term object
 ---@param layout string[][]
----@return Monitor|Window
+---@return staple.Stapled
 local function staple(layout)
     local cursorx, cursory = 1, 1
     local w, h
@@ -45,8 +46,13 @@ local function staple(layout)
     ---@type Monitor[][]
     local monitors = {}
 
-    ---@type {w:integer,h:integer,x:integer,y:integer}[][]
+    ---@alias staple.monitorInfo {w:integer,h:integer,x:integer,y:integer}
+    ---@type staple.monitorInfo[][]
     local monitorInfo = {}
+
+    ---@type table<string,staple.monitorInfo>
+    local monitorLookup = {}
+
     ---@param fun fun(x: integer, y: integer, mon: Monitor)
     local function runOnAll(fun)
         for y, row in ipairs(monitors) do
@@ -66,6 +72,7 @@ local function staple(layout)
         end
         w = 0
         h = 0
+        monitorLookup = {}
         runOnAll(function(x, y, mon)
             monitorInfo[y] = monitorInfo[y] or {}
             local monW, monH = mon.getSize()
@@ -85,6 +92,7 @@ local function staple(layout)
                 w = w + monW
             end
             monitorInfo[y][x] = { w = monW, h = monH, x = monX, y = monY }
+            monitorLookup[mon.name] = monitorInfo[y][x]
         end)
     end
     updateSize()
@@ -107,7 +115,7 @@ local function staple(layout)
         return val
     end
 
-    ---@type Window
+    ---@class staple.Stapled : ccTweaked.term.Redirect
     local monEmu = {}
 
     for k, _ in pairs(monitors[1][1]) do -- allow access to window methods
@@ -168,9 +176,27 @@ local function staple(layout)
         error("Staple needs to be buffered for scrolling to work.")
     end
 
+    ---Start a loop to listen for monitor_touch events on composite monitors,
+    ---then requeue them as if they are monitor_touch events for the given monitor name.
+    function monEmu.redirectTouches(name)
+        while true do
+            local _, mon, x, y = os.pullEvent("monitor_touch")
+            local info = monitorLookup[mon]
+            if info then
+                local cx, cy = x + info.x - 1, y + info.y - 1
+                if name == "term" then
+                    os.queueEvent("mouse_click", 1, cx, cy)
+                    os.queueEvent("mouse_up", 1, cx, cy)
+                else
+                    os.queueEvent("monitor_touch", name, cx, cy)
+                end
+            end
+        end
+    end
+
     local win = monEmu
     if layout.buffer then
-        win = window.create(monEmu, 1, 1, w, h)
+        win = setmetatable(window.create(monEmu, 1, 1, w, h), { __index = monEmu })
         function win.setTextScale(scale)
             monEmu.setTextScale(scale)
             win.reposition(1, 1, w, h)
@@ -181,7 +207,7 @@ end
 
 ---Load a stapled term object from a file
 ---@param filename string
----@return Monitor|Window
+---@return staple.Stapled
 local function loadStaple(filename)
     local f = assert(fs.open(filename, "r"))
     local d = assert(textutils.unserialise(f.readAll() --[[@as string]]), "Invalid file.") --[[@as table]]
@@ -190,15 +216,22 @@ local function loadStaple(filename)
 end
 
 local function runProgram(side, monitor, filename, args)
-    local env = setmetatable({ peripheral = setmetatable({}, { __index = _ENV.peripheral }) }, { __index = _ENV })
     local oldWrap = peripheral.wrap
-    env.peripheral.wrap = function(s)
+    _ENV.peripheral = setmetatable({}, { __index = _G.peripheral })
+    _ENV.peripheral.wrap = function(s)
         if s == side then
             return monitor
         end
         return oldWrap(s)
     end
-    loadfile(filename, "t", env)(table.unpack(args, 1, args.n))
+    parallel.waitForAny(
+        function()
+            monitor.redirectTouches(side)
+        end,
+        function()
+            loadfile(shell.resolve(filename), "t", _ENV)(table.unpack(args, 1, args.n))
+        end
+    )
 end
 
 local args = { ... }
@@ -250,7 +283,13 @@ local argsLookup = {
         end
         local stapled = loadStaple(args[2])
         term.redirect(stapled)
-        shell.run(args[3], table.unpack(args, 4, args.n))
+        parallel.waitForAny(
+            function()
+                stapled.redirectTouches("term")
+            end, function()
+                shell.run(args[3], table.unpack(args, 4, args.n))
+            end
+        )
     end
 }
 

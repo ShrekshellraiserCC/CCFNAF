@@ -798,7 +798,7 @@ local function context(displayName)
 end
 
 local bigfont = require "bigfont"
----@param monitor ccTweaked.peripherals.Monitor
+---@param monitor ccTweaked.term.Redirect
 ---@param w integer
 ---@param text [string,string,string]
 ---@param y integer
@@ -817,7 +817,7 @@ local function centerBlit(monitor, w, text, y, size)
     bigfont.blitOn(monitor, size, text[1], text[2], text[3], (w - (#text[1] * size * 3)) / 2, y)
   end
 end
----@param monitor ccTweaked.peripherals.Monitor
+---@param monitor ccTweaked.term.Redirect
 ---@param w integer
 ---@param text string
 ---@param y integer
@@ -837,7 +837,7 @@ local function centerWrite(monitor, w, text, y, size)
   end
 end
 
----@param monitor ccTweaked.peripherals.Monitor
+---@param monitor ccTweaked.term.Redirect
 ---@param w integer
 ---@param v number
 ---@param y integer
@@ -847,7 +847,7 @@ local function progressBar(monitor, w, v, y)
   local t = ("\127"):rep(fChars)
   monitor.write(t .. ("\140"):rep(w - fChars))
 end
----@param monitor ccTweaked.peripherals.Monitor
+---@param monitor ccTweaked.term.Redirect
 local function printProgress(monitor, v, vt, fn)
   local w, h = monitor.getSize()
   local y = h - 3
@@ -859,9 +859,13 @@ end
 local function audioFilenameProvider(id)
   return { id .. ".dfpwm" }
 end
-local function audioLoader(fn)
+local function audioLoader(fn, name, meta)
   local audio = require "audio"
-  return audio.loadAudio(fn, true)
+  local framerate
+  if meta.framerate then
+    framerate = meta.framerate[name]
+  end
+  return audio.loadAudio(fn, true, framerate)
 end
 local function textureFilenameProvider(id)
   return {
@@ -1034,8 +1038,8 @@ local throbberBimg = {
   height = 4,
   animated = false,
 }
-local function resourceLoader(displayName, gameName)
-  local monitor = assert(peripheral.wrap(displayName), "Monitor required for resourceLoader")
+local function resourceLoader(gameName)
+  local monitor = term
   local w, h = monitor.getSize()
   local function drawThrobberThread(s)
     local i = 0
@@ -1053,11 +1057,21 @@ local function resourceLoader(displayName, gameName)
     end
   end
   ---@alias FilenameProvider fun(s:string):string[]
-  ---@alias FileLoader fun(s:string):any
-  ---@alias ResourceCollection {fnProvider:FilenameProvider,loader:FileLoader,files:string[],optional:string[],name:string,count:integer}
+  ---@alias FileLoader fun(fn:string,name:string,meta:table):any
+  ---@alias ResourceCollection {fnProvider:FilenameProvider,loader:FileLoader,files:string[],optional:string[],name:string,count:integer,meta:table}
   local collections = {}
   local self = {}
   local totalResources = 0
+  function self.setMonitor(name)
+    monitor = assert(peripheral.wrap(name), "Monitor required for resourceLoader")
+    w, h = monitor.getSize()
+    return self
+  end
+
+  ---@param name string
+  ---@param fnProvider FilenameProvider
+  ---@param loader FileLoader
+  ---@return table
   function self.addCollection(name, fnProvider, loader)
     collections[name] = {
       fnProvider = fnProvider,
@@ -1065,8 +1079,14 @@ local function resourceLoader(displayName, gameName)
       files = {},
       optional = {},
       name = name,
-      count = 0
+      count = 0,
+      meta = {}
     }
+    return self
+  end
+
+  function self.setResourceMeta(name, metaname, data)
+    collections[name].meta[metaname] = data
     return self
   end
 
@@ -1109,7 +1129,7 @@ local function resourceLoader(displayName, gameName)
     local fn = getExistingFn(collection.fnProvider(location))
     if optional and not fn then return end
     assert(fn, ("Unable to find file for resource %s"):format(location))
-    local d = collection.loader(fn)
+    local d = collection.loader(fn, location, collection.meta)
     return d
   end
   local j = 0
@@ -1169,6 +1189,12 @@ local function resourceLoader(displayName, gameName)
   end
 
   function self.load()
+    monitor.setPaletteColor(colors.white, 0xFFFFFF)
+    monitor.setPaletteColor(colors.black, 0) -- Assure the palette is something visible
+    monitor.setTextScale(0.5)
+    monitor.setTextColor(colors.white)
+    monitor.setBackgroundColor(colors.black)
+    monitor.clear()
     local loadStartTime = os.epoch("utc")
     j = 0
     resources = {}
@@ -1201,6 +1227,10 @@ local function resourceLoader(displayName, gameName)
 
   function self.addOptionalSounds(resources)
     return self.addOptionalResources("sound", resources)
+  end
+
+  function self.setSoundFramerateOverride(resources)
+    return self.setResourceMeta("sound", "framerate", resources)
   end
 
   return self

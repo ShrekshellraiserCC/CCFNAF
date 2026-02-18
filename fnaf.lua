@@ -1,13 +1,14 @@
 -- images are at 21.69%
 -- 6x4 monitor at 242 x 156 pixels (121 x 52 chars)
 -- the screen is 52 characters too narrow to fit the office
-local engine  = require "engine"
-local audio   = require "audio"
-local bigfont = require "bigfont"
+local engine      = require "engine"
+local audio       = require "audio"
+local bigfont     = require "bigfont"
 
+local monitorName = ...
 
 ---@alias LOCATION integer
-local LOCATIONS = {
+local LOCATIONS   = {
   ["1A"]         = 1,  -- STAGE
   STAGE          = 1,
   ["1B"]         = 2,  -- DINING
@@ -37,19 +38,6 @@ local LOCATIONS = {
 
 setmetatable(LOCATIONS, { __index = function(_, k) error(("Invalid location %s"):format(k)) end })
 
-local monitor = assert(peripheral.wrap("top"), "FNAF requires a 6x4 monitor on top.")
-monitor.setPaletteColor(colors.white, 0xFFFFFF)
-monitor.setPaletteColor(colors.black, 0) -- Assure the palette is something visible
-monitor.setBackgroundColor(colors.black)
-monitor.setTextColor(colors.white)
-monitor.clear()
-monitor.setTextScale(0.5)
-local w, h = monitor.getSize()
-if w < 121 or h < 52 then
-  local eMsg = "FNAF requires at least a 6x4 monitor attached on top."
-  monitor.write(eMsg)
-  error(eMsg, 0)
-end
 
 --- Resource loading
 ---@type string[]
@@ -128,12 +116,16 @@ local soundFileFramerateOverride = {
   robotvoice = 2000,
   blip = 1000,
 }
-local resourceLoader             = engine.resourceLoader("top", "FNAF ")
-resourceLoader.addTextures(textureFiles).addSounds(soundFiles).addOptionalSounds(optionalSoundFiles)
+local resourceLoader             = engine.resourceLoader("FNAF ")
+resourceLoader.addTextures(textureFiles)
+    .addSounds(soundFiles)
+    .addOptionalSounds(optionalSoundFiles)
+    .setSoundFramerateOverride(soundFileFramerateOverride)
 ---@type table<string,BIMG> Texture table
 local texture = {}
 ---@type table<string,table>
 local sound   = {}
+
 
 ---@param night integer
 ---@param freddyDifficulty integer?
@@ -141,11 +133,28 @@ local sound   = {}
 ---@param chicaDifficulty integer?
 ---@param foxyDifficulty integer?
 local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, foxyDifficulty)
-  local g               = engine.game("top")
-  local scrollWidth     = g.root.w - #texture.office[1][1][1] + 1 -- width of office
-  local debugWin        = window.create(term.current(), 1, 1, term.getSize())
+  local g                          = engine.game(monitorName)
+  local officeWidth                = #texture.office[1][1][1]
+  local scrollWidth                = g.root.w - officeWidth + 1 -- width of office
+  local debugWin                   = window.create(term.current(), 1, 1, term.getSize())
+  local disableOfficeScrollButtons = g.root.w >= officeWidth - 4
 
-  local showDebug       = true
+
+  local monitor = assert(peripheral.wrap(monitorName), "FNAF requires a 6x4 monitor.")
+  monitor.setPaletteColor(colors.white, 0xFFFFFF)
+  monitor.setPaletteColor(colors.black, 0) -- Assure the palette is something visible
+  monitor.setBackgroundColor(colors.black)
+  monitor.setTextColor(colors.white)
+  monitor.clear()
+  monitor.setTextScale(0.5)
+  local w, h = monitor.getSize()
+  if w < 121 or h < 52 then
+    local eMsg = "FNAF requires at least a 6x4 monitor attached."
+    monitor.write(eMsg)
+    error(eMsg, 0)
+  end
+
+  local showDebug       = false
 
   local black           = colors.black
   local white           = colors.white
@@ -326,7 +335,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
       g.exit(gameReturnValue)
     end
   end
-  g.root:addChild(gameEndscreenObject, -2, 1)
+  g.root:addChild(gameEndscreenObject, math.floor((g.root.w - gameEndscreenObject.w) / 2), 1)
   ---@type table<string,AnimatedObject>
   local jumpscares = {}
   ---Show the End screen
@@ -736,7 +745,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
 
   local cameraButton = engine.staticObject(texture.bar, 1)
   cameraButton.z = 2
-  officeView:addChild(cameraButton, 25, 47)
+  officeView:addChild(cameraButton, math.floor((officeView.w - cameraButton.w) / 2), 47)
 
   local voiceoverFile = sound["voiceover" .. night]
   if voiceoverFile then
@@ -789,7 +798,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     self.window.write(("Night %u"):format(night))
   end
   nightIndicator.z = 2
-  gameObject:addChild(nightIndicator, 98, 3)
+  gameObject:addChild(nightIndicator, gameObject.w - nightIndicator.w - 2, 3)
 
   -- AI level increases at times
   -- 2AM +1 bonnie
@@ -974,7 +983,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     open_door(rightDoor)
   end
 
-  do -- look buttons
+  if not disableOfficeScrollButtons then -- look buttons
     local lookLeft
     local lookRight = engine.staticObject(texture.right_bar)
     lookRight.z = 2
@@ -1240,7 +1249,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
 
 
     local cameraMap = engine.staticObject(texture.map)
-    cameraContainer:addChild(cameraMap, 80, 23)
+    cameraContainer:addChild(cameraMap, cameraContainer.w - cameraMap.w, 23)
     cameraMap.z = 2
     cameraMap.label = "cameraMap"
 
@@ -1277,7 +1286,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
     addCameraButton("7", 33, 8)
 
     local closeCameraButton = engine.staticObject(texture.bar)
-    cameraContainer:addChild(closeCameraButton, 25, 47)
+    cameraContainer:addChild(closeCameraButton, math.floor((cameraContainer.w - closeCameraButton.w) / 2), 47)
     closeCameraButton.z = 3
 
     cameraContainer.visible = false
@@ -1290,7 +1299,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
         setState("OFFICE")
       end
     end)
-    gameObject:addChild(cameraAnimation, 1, 1)
+    gameObject:addChild(cameraAnimation, math.floor((w - cameraAnimation.w) / 2), 1)
     cameraAnimation.visible = false
     cameraAnimation.active = false
 
@@ -1543,6 +1552,7 @@ local function fnaf(night, freddyDifficulty, bonnieDifficulty, chicaDifficulty, 
 end
 
 local function loadResources()
+  resourceLoader.setMonitor(monitorName)
   local resources = resourceLoader.validate().load()
   texture = resources.texture
   sound = resources.sound
@@ -1552,5 +1562,8 @@ end
 return {
   fnaf = fnaf,
   resourceLoader = resourceLoader,
-  loadResources = loadResources
+  loadResources = loadResources,
+  setMonitor = function(name)
+    monitorName = name
+  end
 }

@@ -5,10 +5,11 @@
 
 local args = { ... }
 if #args < 2 then
-    print("Usage: [root] [program]")
+    print("Usage: [root] [program] <args...>")
 end
 local fn = args[2]
 local root = args[1]
+local pargs = table.pack(table.unpack(args, 3))
 
 ---@type table<string,string|string[]>
 local filePaths = {}
@@ -108,4 +109,4 @@ fs.getSize = function(path)
 end
 
 assert(fs.exists(fn), "File does not exist.")
-loadfile(fn, "t", _ENV)()
+loadfile(fn, "t", _ENV)(table.unpack(pargs))
